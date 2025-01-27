@@ -1,0 +1,23 @@
+{
+  "name": "discord-spotify-bot",
+  "version": "1.0.0",
+  "description": "Discord bot that displays Spotify activity",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "discord",
+    "spotify",
+    "bot"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "spotify-web-api-node": "^5.0.2"
+  }
+}
