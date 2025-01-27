@@ -21,7 +21,7 @@ A Discord bot that displays your current Spotify activity in real-time. The bot 
 
 ### 1. Clone the Repository
 ```bash
-git clone [your-repo-url]
+git clone https://github.com/kozydot/Discord-Spotify-Now-Playing-Bot.git
 cd discord-spotify-bot
 ```
 
