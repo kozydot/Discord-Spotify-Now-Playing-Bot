@@ -3,13 +3,77 @@ import SpotifyWebApi from 'spotify-web-api-node';
 import { Client as GeniusClient } from 'genius-lyrics';
 import 'dotenv/config';
 
+// Connection management
+const connectionManager = {
+  initialDelay: 1000,
+  maxDelay: 300000,
+  currentDelay: 1000,
+  maxAttempts: 0,
+  attempts: 0,
+  isReconnecting: false,
+  timeoutId: null,
+  lastConnected: Date.now()
+};
+
 // Initialize Discord client with necessary intents
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages
-  ]
+  ],
+  failIfNotExists: false,
+  retryLimit: 5
 });
+
+// Reset connection state
+function resetConnectionState() {
+  connectionManager.currentDelay = connectionManager.initialDelay;
+  connectionManager.attempts = 0;
+  connectionManager.isReconnecting = false;
+  if (connectionManager.timeoutId) {
+    clearTimeout(connectionManager.timeoutId);
+    connectionManager.timeoutId = null;
+  }
+}
+
+// Handle reconnection with exponential backoff
+async function handleReconnection() {
+  if (connectionManager.isReconnecting) return;
+  connectionManager.isReconnecting = true;
+
+  while (connectionManager.maxAttempts === 0 || connectionManager.attempts < connectionManager.maxAttempts) {
+    try {
+      console.log(`${c.yellow}Attempting to reconnect (Attempt ${connectionManager.attempts + 1})...${c.reset}`);
+      
+      await Promise.all([
+        client.login(process.env.DISCORD_TOKEN),
+        refreshSpotifyToken()
+      ]);
+
+      console.log(`${c.green}Successfully reconnected!${c.reset}`);
+      connectionManager.lastConnected = Date.now();
+      resetConnectionState();
+      return true;
+    } catch (error) {
+      connectionManager.attempts++;
+      connectionManager.currentDelay = Math.min(
+        connectionManager.currentDelay * 2,
+        connectionManager.maxDelay
+      );
+
+      console.error(`${c.red}Reconnection attempt failed: ${error.message}${c.reset}`);
+      console.log(`${c.yellow}Next attempt in ${connectionManager.currentDelay / 1000} seconds...${c.reset}`);
+
+      await new Promise(resolve => {
+        connectionManager.timeoutId = setTimeout(resolve, connectionManager.currentDelay);
+      });
+    }
+  }
+
+  console.error(`${c.red}Failed to reconnect after ${connectionManager.attempts} attempts${c.reset}`);
+  connectionManager.isReconnecting = false;
+  return false;
+}
 
 // Initialize Genius client
 const genius = new GeniusClient(process.env.GENIUS_API_KEY);
@@ -63,26 +127,28 @@ function logSongInfo(track) {
   console.log('='.repeat(50) + '\n');
 }
 
-// Function to split lyrics into chunks (Discord has 2000 char limit)
+// Optimized lyrics splitting function
 function splitLyrics(lyrics) {
   const chunks = [];
   const maxLength = 1800;
-  let currentChunk = '';
-
-  lyrics.split('\n').forEach(line => {
-    if (currentChunk.length + line.length + 1 > maxLength) {
-      chunks.push(currentChunk);
-      currentChunk = line;
-    } else {
-      currentChunk += (currentChunk ? '\n' : '') + line;
+  let start = 0;
+  
+  // Use while loop for better performance with large strings
+  while (start < lyrics.length) {
+    let end = start + maxLength;
+    
+    if (end < lyrics.length) {
+      // Find the last newline before maxLength
+      const lastNewline = lyrics.lastIndexOf('\n', end);
+      end = lastNewline > start ? lastNewline : end;
     }
-  });
-
-  if (currentChunk) {
-    chunks.push(currentChunk);
+    
+    chunks.push(lyrics.slice(start, end).trim());
+    start = end + 1;
   }
-
-  return chunks;
+  
+  // Filter out empty chunks
+  return chunks.filter(chunk => chunk.length > 0);
 }
 
 // Function to get current song info
@@ -192,8 +258,7 @@ async function updateStatus() {
       const messageContent = {
         embeds: [{
           author: {
-            name: `${spotifyUsername} is listening to`,
-            icon_url: 'https://cdn.discordapp.com/emojis/1003409128425304134.webp?size=96&quality=lossless'
+            name: `🎵 ${spotifyUsername} is listening to`
           },
           title: track.name,
           description: `by ${artists}\nfrom ${albumName}`,
